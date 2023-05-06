@@ -1,6 +1,6 @@
 {
-  "name": "@ai-test/core",
-  "version": "0.0.1-beta.4",
+  "name": "@openai-test/core",
+  "version": "0.0.1-beta.5",
   "description": "",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",

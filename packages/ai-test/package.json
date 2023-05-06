@@ -1,6 +1,6 @@
 {
-  "name": "ai-test",
-  "version": "0.0.1-beta.4",
+  "name": "openai-test",
+  "version": "0.0.1-beta.5",
   "description": "",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
