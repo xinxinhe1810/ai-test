@@ -1,6 +1,6 @@
 {
-  "name": "core",
-  "version": "0.0.1-beta.0",
+  "name": "@ai-test/core",
+  "version": "0.0.1-beta.1",
   "description": "",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -34,14 +34,6 @@
       }
     }
   },
-  "files": [
-    "dist",
-    "bin",
-    "*.d.ts",
-    "*.d.cts",
-    "*.mjs",
-    "*.cjs"
-  ],
   "dependencies": {
     "debug": "^4.3.4",
     "fast-glob": "^3.2.12",
