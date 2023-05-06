@@ -1,0 +1,56 @@
+{
+  "name": "core",
+  "version": "0.0.1-beta.0",
+  "description": "",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./dist/*",
+        "./dist/index.d.ts"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "rimraf dist && rollup -c",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=8192\" rollup -c --watch -m inline",
+    "prepublishOnly": "pnpm build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "exports": {
+    ".": {
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "*.d.ts",
+    "*.d.cts",
+    "*.mjs",
+    "*.cjs"
+  ],
+  "dependencies": {
+    "debug": "^4.3.4",
+    "fast-glob": "^3.2.12",
+    "fs-extra": "^11.1.1",
+    "openai": "^3.2.1",
+    "resolve": "2.0.0-next.4",
+    "typescript": "5.1.0-dev.20230506"
+  },
+  "devDependencies": {
+    "rollup": "^3.21.5"
+  }
+}

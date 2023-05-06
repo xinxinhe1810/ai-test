@@ -1,0 +1,20 @@
+{
+  "name": "ai-test",
+  "version": "0.0.1-beta.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cac": "^6.7.14",
+    "core": "workspace:*",
+    "import-local": "^3.1.0",
+    "mlly": "^1.2.0",
+    "pathe": "^1.1.0",
+    "picocolors": "^1.0.0"
+  },
+  "bin": "./bin/index.js"
+}
