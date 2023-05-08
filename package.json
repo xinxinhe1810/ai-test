@@ -8,7 +8,7 @@
     "lint": "eslint --cache .",
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
-    "release": "bumpp package.json packages/core/package.json packages/openai-test/package.json --commit --push --tag && pnpm -r publish --access public",
+    "release": "bumpp package.json packages/core/package.json packages/openai-test/package.json --commit --push --tag && pnpm -r --filter \"core openai-test\" publish --access public",
     "test": "jest"
   },
   "devDependencies": {
