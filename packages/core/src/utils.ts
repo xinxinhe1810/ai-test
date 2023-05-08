@@ -7,7 +7,7 @@ const rootDir = process.cwd()
 
 const getPath = (p) => path.isAbsolute(p) ? p : path.join(rootDir, p);
 
-export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void) {
+export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, skipComment = 'skip-test') {
     const realPath = getPath(path);
 
     const fileContent = readFileSync(realPath, 'utf-8');
@@ -35,7 +35,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void) {
             if (node.modifiers && node.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
                 const leadingComments = ts.getLeadingCommentRanges(code, node.pos);
                 const checkNeedSkip = !leadingComments || !leadingComments.some(range => {
-                    return code.substring(range.pos, range.end).includes('skip-test')
+                    return code.substring(range.pos, range.end).includes(skipComment)
                 })
 
                 if (checkNeedSkip) {
@@ -81,12 +81,17 @@ export function getWritePathInfo (absolutePath) {
     }
 }
 
-// TODO: 是否测试函数中调用的函数、暂时不支持
-export const getPrompt = (code: string, testType = 'jest') => {
-    const prompt = `Please generate a ${testType} unit test for the following JavaScript code, ensuring 100% test coverage and including various scenarios such as success and failure. Please note that the provided code is only a partial block of code and any non-existent functions should not be tested. \n\n${code}\n`;
-    if (testType === 'jest') {
-        return prompt
-    }
+export const getPrompt = (code: string) => {
+    // const prompt = `Please generate a ${testType} unit test for the following JavaScript code, ensuring 100% test coverage and including various scenarios such as success and failure. Please note that the provided code is only a partial block of code and any non-existent functions should not be tested. \n\n${code}\n`;
+    const prompt = `
+    Write a Jest unit test code block to thoroughly test the functionality and edge cases of the following TypeScript function. Ensure to cover various inputs and expected outputs.
+
+Example code to be tested:
+
+${code}
+
+The function relies on an external function, which is not provided. Please focus on testing the parts of your function that can be thoroughly tested without the need to unit test or mock the external function.
+    `
 
     return prompt
 }

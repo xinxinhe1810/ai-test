@@ -12,8 +12,12 @@ interface Options {
     include: string[]
     exclude?: string[]
     testType?: 'jest';
+    skipTestComment?: string;
     // concurrency?: number;
 
+    /**
+     * 是否覆盖已存在的文件夹
+     */
     force?: boolean
 
     openaiOptions?: {
@@ -32,7 +36,9 @@ export class OpenaiAutoTest {
 
     // private concurrency: number = 4;
 
-    force = false
+    skipTestComment: string | undefined = undefined
+
+    private force = false
 
     private needToAutoTestCodes: AutoTestFuncInfo[] = []
 
@@ -41,10 +47,12 @@ export class OpenaiAutoTest {
         this.exclude = options.exclude || []
 
         this.force = !!options.force
+
+        this.skipTestComment = options.skipTestComment
         // this.concurrency = options.concurrency || 2
 
         const configuration = new Configuration({
-            apiKey: process.env.API_KEY || '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',
+            apiKey: process.env.API_KEY,
             ...options.openaiOptions?.config,
         });
 
@@ -70,12 +78,12 @@ export class OpenaiAutoTest {
 
             handleTypescriptAst(path, (info: AutoTestFuncInfo) => {
                 this.needToAutoTestCodes.push(info)
-            });
+            }, this.skipTestComment);
         }
     }
 
     private analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
-        const prompt = getPrompt(func.code, this.testType);
+        const prompt = getPrompt(func.code);
         // dbg('prompt', prompt);
 
         dbg('handle analyzeAndGenerateTestsCode before', func.name)
@@ -111,8 +119,10 @@ ${importedCode}
             ensureFileSync(path)
     
             writeFileSync(path, wrapperCode)
+            console.warn(path, 'file write success!');
         } else {
-            console.log('file is existing not force to write', path)
+            console.warn(path, 'file is existing not force to write, please use force to overwrite it or delete it');
+            // console.log('result code', wrapperCode)
         }
     }
 
@@ -134,5 +144,7 @@ ${importedCode}
         const res = await this.openai!.listModels()
 
         console.log(res.data.data)
+
+        return res.data.data
     }
 }

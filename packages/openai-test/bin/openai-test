@@ -1,0 +1,53 @@
+#!/usr/bin/env node
+
+const yargs = require('yargs/yargs');
+const {hideBin} = require('yargs/helpers');
+const path = require('path');
+
+const {OpenaiAutoTest} = require('@openai-test/core')
+
+const dotenv = require('dotenv')
+
+dotenv.config({path: path.join(process.cwd(), '.env'), override: true})
+dotenv.config({path: path.join(process.cwd(), '.env.local'), override: true})
+
+/**
+ * 选项：
+  -c, --config   oepnaitest.config.js 位置                                     [字符串]
+  -h, --help     显示帮助信息                                             [布尔]
+  -v, --version  显示版本号                                               [布尔]
+ */
+yargs(hideBin(process.argv))
+    .alias('h', 'help')
+    .alias('v', 'version')
+    .option('config', {
+        type: 'string',
+        alias: 'c',
+        description: 'openaitest.config.js 位置',
+    })
+    .command(
+        ['$0'],
+        '',
+        async argv => {
+            console.log('run argv', argv.argv);
+
+            const configFile = await import(path.resolve((process.cwd(), 'openaitest.config.js')))
+
+            console.log('configFile', configFile)
+            const config = configFile?.default
+
+            if (!config) {
+                throw new Error('please init openaitest-config.js')
+            }
+
+            const openai = new OpenaiAutoTest({...config})
+
+            // console.log('config', config, openai.listModel())
+            try {
+                await openai.run();
+            } catch (error) {
+                console.error('auto test run error', error);
+            }
+        }
+    )
+    .help().argv;
