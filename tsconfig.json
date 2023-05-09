@@ -1,6 +1,6 @@
 {  
   "ts-node": {
-    "transpileOnly": true
+    "transpileOnly": true,
   },
   "compilerOptions": {
     "target": "esnext",
@@ -18,5 +18,5 @@
     "declaration": true,
     "sourceMap": false
   },
-  "include": ["src", "packages"]
+  "include": ["src", "packages", "examples", "jest.config.ts"]
 }

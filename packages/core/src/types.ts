@@ -1,8 +1,8 @@
-import ts from "typescript";
+import ts from 'typescript';
 
-export type AutoTestFuncInfo = {
+export interface AutoTestFuncInfo {
     name: string | ts.__String;
     code: string;
     path: string;
     absolutePath: string;
-}
+};

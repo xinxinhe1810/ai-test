@@ -1,6 +1,6 @@
-const isObject = (value) => {
+const isObject = value => {
     return Reflect.toString.call(value) === '[object Object]';
-}
+};
 
 /**
  * 过滤传入的 Object 只获取需要的字段（基于原对象的浅拷贝）
@@ -13,7 +13,7 @@ const isObject = (value) => {
 export function filterObject<T>(obj: T, filterHandle: (key: string, value: any) => boolean): Partial<T> {
     const newObj: Partial<T> = {};
     if (isObject(obj)) {
-        Object.keys(obj).forEach(key => {
+        Object.keys(obj as Record<string, any>).forEach(key => {
             if (filterHandle(key, obj[key])) {
                 newObj[key] = obj[key];
             }
@@ -86,3 +86,69 @@ export function getRedirectTarget(includeHost: boolean = false): string {
         = currentUrlSearchParams.get('redirect') || (location.pathname === '/login' ? '/' : location.pathname);
     return (includeHost ? location.host : '') + redirectTarget;
 }
+
+// 获取字符串长度、汉字 2、字母 1
+export const getAbsStrLen = (str: string) => str.replace(/[^\x00-\xff]/g, '01').length;
+
+export const IS_NODE = typeof window === 'undefined' && typeof global === 'object';
+
+export const IS_BROWNER = typeof window !== 'undefined';
+
+export const loadJavascript = (url: string) => {
+    return new Promise((res, rej) => {
+        const script = document.createElement('script');
+        script.src = url;
+
+        script.onload = () => {
+            res(url);
+        };
+
+        script.onerror = err => {
+            rej(err);
+        };
+
+        document.body.append(script);
+    });
+};
+
+export const parseJSONSafely = (json: string) => {
+    try {
+        const data = JSON.parse(json);
+        return data;
+    }
+    catch (error) {
+        return {};
+    }
+};
+
+export const getTrimmedString = (s: string) => {
+    return s.trim();
+};
+
+export const loadScriptAsync = (url: string, callback?: () => void, opt?: {id?: string, charset?: 'utf-8'}) => {
+    return new Promise((res, rej) => {
+        const script = document.createElement('script');
+        const opts = opt || {};
+
+        script.type = 'text/javascript';
+
+        if (opts.charset) {
+            script.charset = opts.charset;
+        }
+        if (opts.id) {
+            script.id = opts.id;
+        }
+
+        script.onload = function () {
+            callback && callback();
+            res(script);
+        };
+
+        script.onerror = err => {
+            rej(err);
+        };
+
+        script.src = url;
+        document.body.appendChild(script);
+    });
+};

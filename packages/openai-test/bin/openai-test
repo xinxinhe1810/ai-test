@@ -4,12 +4,16 @@ const yargs = require('yargs/yargs');
 const {hideBin} = require('yargs/helpers');
 const path = require('path');
 
-const {OpenaiAutoTest} = require('@openai-test/core')
+const fse = require('fs-extra');
 
-const dotenv = require('dotenv')
+const pc = require('picocolors');
 
-dotenv.config({path: path.join(process.cwd(), '.env'), override: true})
-dotenv.config({path: path.join(process.cwd(), '.env.local'), override: true})
+const {OpenaiAutoTest} = require('..');
+
+const dotenv = require('dotenv');
+
+dotenv.config({path: path.join(process.cwd(), '.env'), override: true});
+dotenv.config({path: path.join(process.cwd(), '.env.local'), override: true});
 
 /**
  * 选项：
@@ -28,26 +32,43 @@ yargs(hideBin(process.argv))
     .command(
         ['$0'],
         '',
-        async argv => {
-            console.log('run argv', argv.argv);
+        async () => {
+            if (fse.existsSync(path.resolve((process.cwd(), 'openaitest.config.js')))) {
+                const configFile = await import(path.resolve((process.cwd(), 'openaitest.config.js')));
 
-            const configFile = await import(path.resolve((process.cwd(), 'openaitest.config.js')))
+                const config = configFile?.default;
 
-            console.log('configFile', configFile)
-            const config = configFile?.default
-
-            if (!config) {
-                throw new Error('please init openaitest-config.js')
+                if (!config) {
+                    throw new Error('please init openaitest-config.js');
+                }
+                run(config);
             }
-
-            const openai = new OpenaiAutoTest({...config})
-
-            // console.log('config', config, openai.listModel())
-            try {
-                await openai.run();
-            } catch (error) {
-                console.error('auto test run error', error);
+            else {
+                run();
             }
         }
     )
+    .command('init', 'init openaitest.config.js', () => {
+        const filePath = path.resolve((process.cwd(), 'openaitest.config.js'));
+
+        const code = `
+module.exports = {
+    include: ['**/*.js', '!node_modules/**'],
+};`;
+
+        fse.writeFileSync(filePath, code);
+        // eslint-disable-next-line no-console
+        console.log(pc.green('init success openaitest.config.js'));
+    })
     .help().argv;
+
+
+async function run(options) {
+    const openai = new OpenaiAutoTest(options);
+    try {
+        await openai.run();
+    }
+    catch (error) {
+        console.error('auto test run error', error);
+    }
+}

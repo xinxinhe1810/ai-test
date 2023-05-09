@@ -1,92 +1,93 @@
-import { builtinModules } from 'node:module'
-import esbuild from 'rollup-plugin-esbuild'
-import dts from 'rollup-plugin-dts'
-import resolve from '@rollup/plugin-node-resolve'
-import commonjs from '@rollup/plugin-commonjs'
-import json from '@rollup/plugin-json'
-import alias from '@rollup/plugin-alias'
-import { defineConfig } from 'rollup'
-import { readFile } from 'node:fs/promises'
+import {builtinModules} from 'node:module';
+import esbuild from 'rollup-plugin-esbuild';
+import dts from 'rollup-plugin-dts';
+import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
+import alias from '@rollup/plugin-alias';
+import {defineConfig} from 'rollup';
+import {readFile} from 'node:fs/promises';
 // import pkg from './package.json'
 
-const pkg = JSON.parse(await readFile("./package.json"));
+const pkg = JSON.parse(await readFile('./package.json'));
 
 const entries = {
-  'index': 'src/index.ts',
-}
+    'index': 'src/index.ts',
+};
 
 const external = [
-  ...builtinModules,
-  ...Object.keys(pkg.dependencies || {}),
-  ...Object.keys(pkg.peerDependencies || {}),
-  'pathe',
-  'birpc',
-  'node:url',
-  'node:events',
-]
+    ...builtinModules,
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.peerDependencies || {}),
+    'pathe',
+    'birpc',
+    'node:url',
+    'node:events',
+];
 
 const plugins = [
-  resolve({
-    preferBuiltins: true,
-  }),
-  json(),
-  commonjs(),
-  esbuild({
-    target: 'node14',
-  }),
-]
+    resolve({
+        preferBuiltins: true,
+    }),
+    json(),
+    commonjs(),
+    esbuild({
+        target: 'node14',
+    }),
+];
 
 export default defineConfig([
-  {
-    input: entries,
-    output: {
-      dir: 'dist',
-      format: 'esm',
-      entryFileNames: '[name].mjs',
-      chunkFileNames: 'chunk-[name].mjs',
+    {
+        input: entries,
+        output: {
+            dir: 'dist',
+            format: 'esm',
+            entryFileNames: '[name].mjs',
+            chunkFileNames: 'chunk-[name].mjs',
+        },
+        external,
+        plugins,
+        onwarn,
     },
-    external,
-    plugins,
-    onwarn,
-  },
-  {
-    input: entries,
-    output: {
-      dir: 'dist',
-      format: 'cjs',
-      entryFileNames: '[name].cjs',
-      chunkFileNames: 'chunk-[name].cjs',
-    },
-    external,
-    plugins: [
-      alias({
-        entries: [
-          // cjs in Node 14 doesn't support node: prefix
-          // can be dropped, when we drop support for Node 14
-          { find: /^node:(.+)$/, replacement: '$1' },
+    {
+        input: entries,
+        output: {
+            dir: 'dist',
+            format: 'cjs',
+            entryFileNames: '[name].cjs',
+            chunkFileNames: 'chunk-[name].cjs',
+        },
+        external,
+        plugins: [
+            alias({
+                entries: [
+                    // cjs in Node 14 doesn't support node: prefix
+                    // can be dropped, when we drop support for Node 14
+                    {find: /^node:(.+)$/, replacement: '$1'},
+                ],
+            }),
+            ...plugins,
         ],
-      }),
-      ...plugins,
-    ],
-    onwarn,
-  },
-  {
-    input: entries,
-    output: {
-      dir: 'dist',
-      entryFileNames: '[name].d.ts',
-      format: 'esm',
+        onwarn,
     },
-    external,
-    plugins: [
-      dts({ respectExternal: true }),
-    ],
-    onwarn,
-  },
-])
+    {
+        input: entries,
+        output: {
+            dir: 'dist',
+            entryFileNames: '[name].d.ts',
+            format: 'esm',
+        },
+        external,
+        plugins: [
+            dts({respectExternal: true}),
+        ],
+        onwarn,
+    },
+]);
 
 function onwarn(message) {
-  if (['EMPTY_BUNDLE', 'CIRCULAR_DEPENDENCY'].includes(message.code))
-    return
-  console.error(message)
+    if (['EMPTY_BUNDLE', 'CIRCULAR_DEPENDENCY'].includes(message.code)) {
+        return;
+    };
+    console.error(message);
 }

@@ -1,16 +1,16 @@
-import path from 'path'
-import debug from 'debug'
-import { sync } from 'fast-glob'
-import { writeFileSync, ensureFileSync, existsSync } from 'fs-extra';
-import { OpenAIApi, Configuration, ConfigurationParameters, CreateCompletionRequest } from "openai";
-import { AutoTestFuncInfo } from "./types";
-import { getPrompt, getWritePathInfo, handleTypescriptAst } from "./utils";
+import path from 'path';
+import debug from 'debug';
+import {sync} from 'fast-glob';
+import {writeFileSync, ensureFileSync, existsSync} from 'fs-extra';
+import {OpenAIApi, Configuration, ConfigurationParameters, CreateCompletionRequest} from 'openai';
+import {AutoTestFuncInfo} from './types';
+import {getPrompt, getWritePathInfo, handleTypescriptAst, rootDir} from './utils';
 
-const dbg = debug('openai-autoTest');
+const dbg = debug('openai-test');
 
 interface Options {
-    include: string[]
-    exclude?: string[]
+    include?: string[];
+    exclude?: string[];
     testType?: 'jest';
     skipTestComment?: string;
     // concurrency?: number;
@@ -18,37 +18,47 @@ interface Options {
     /**
      * 是否覆盖已存在的文件夹
      */
-    force?: boolean
+    forceWriteFile?: boolean;
+
+    /**
+     * 单元测试写文件的力度
+     * 按函数写入单元测试 or 按文件写入单元测试
+     * 如：index.ts 中会有多个函数，单元测试是否产出多个文件
+     */
+    writeFileType?: 'file' | 'function';
 
     openaiOptions?: {
-        config?: ConfigurationParameters
-        createCompletionRequest?: CreateCompletionRequest
-    }
+        config?: ConfigurationParameters;
+        createCompletionRequest?: CreateCompletionRequest;
+    };
 }
 
 export class OpenaiAutoTest {
-    private testType = 'jest'
+    options: Options = {
+        include: ['**/utils/**.{js,ts}'],
+        exclude: [],
+        testType: 'jest',
+        skipTestComment: 'openai-test-skip',
+        writeFileType: 'function',
+        forceWriteFile: false,
+        openaiOptions: {
+            'createCompletionRequest': undefined,
+            config: undefined,
+        },
+    };
 
-    private include: string[] = []
-    private exclude: string[] = []
+    fileMap: Map<string, AutoTestFuncInfo[]> = new Map();
 
-    private openai: OpenAIApi | null = null
+    private readonly openai: OpenAIApi | null = null;
 
     // private concurrency: number = 4;
 
-    skipTestComment: string | undefined = undefined
+    private readonly needToAutoTestCodes: AutoTestFuncInfo[] = [];
 
-    private force = false
-
-    private needToAutoTestCodes: AutoTestFuncInfo[] = []
 
     constructor(options: Options) {
-        this.include = options.include || []
-        this.exclude = options.exclude || []
+        this.options = options;
 
-        this.force = !!options.force
-
-        this.skipTestComment = options.skipTestComment
         // this.concurrency = options.concurrency || 2
 
         const configuration = new Configuration({
@@ -56,95 +66,145 @@ export class OpenaiAutoTest {
             ...options.openaiOptions?.config,
         });
 
+        if (!configuration.apiKey) {
+            throw new Error('openai API_KEY is requried');
+        }
+
         this.openai = new OpenAIApi(configuration);
     }
 
-    private getAutoTestSourceCode() {
-        const { include = [], exclude = [] } = this;
-        const defaultExclude = [
-            '!**/__test__/**',
-            '!**/*.spec.{js,ts,mjs}',
-            '!**/*.{css,scss,styl,less,sass,html,jsx,tsx}',
-        ]
-
-        const handledExclude = exclude.map(e => `!${e}`);
-
-        const paths = sync([...include, ...defaultExclude, ...handledExclude], {
-            ignore: ['**/node_modules/**']
-        });
-
-        for (const path of paths) {
-            dbg('path', path)
-
-            handleTypescriptAst(path, (info: AutoTestFuncInfo) => {
-                this.needToAutoTestCodes.push(info)
-            }, this.skipTestComment);
-        }
-    }
-
-    private analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
-        const prompt = getPrompt(func.code);
-        // dbg('prompt', prompt);
-
-        dbg('handle analyzeAndGenerateTestsCode before', func.name)
-
-        const response = await this.openai!.createCompletion({
-            model: "text-davinci-003",
-            max_tokens: 999,
-            prompt,
-        });
-
-        const { relativePathName, absoluteWritePath } = getWritePathInfo(func.absolutePath)
-
-        const importedCode = `import {${func.name}} from '${relativePathName}';`;
-
-        dbg('importedCode', importedCode);
-
-        const wrapperCode = `
-${importedCode}
-            ${response.data.choices[0].text}
-            `
-
-        dbg('handle analyzeAndGenerateTestsCode end', func.name)
-
-        const writeFilePath = path.join(absoluteWritePath, '__test__', `${func.name}.spec.ts`)
-
-        this.writeResultToPath(writeFilePath, wrapperCode)
-    }
-
-    private writeResultToPath = (path: string, wrapperCode: string) => {
-        dbg('writeFilePath', path, 'force', this.force, !existsSync(path));
-
-        if (this.force || !existsSync(path)) {
-            ensureFileSync(path)
-    
-            writeFileSync(path, wrapperCode)
-            console.warn(path, 'file write success!');
-        } else {
-            console.warn(path, 'file is existing not force to write, please use force to overwrite it or delete it');
-            // console.log('result code', wrapperCode)
-        }
-    }
-
     run = async () => {
-        await this.getAutoTestSourceCode();
+        this.getAutoTestSourceCode();
 
-        console.log(this.needToAutoTestCodes.map(i => i.name))
+        // console.log(this.needToAutoTestCodes.map(i => i.name));
 
-        const promises = this.needToAutoTestCodes.map((i) => this.analyzeAndGenerateTestsCode(i));
+        const promises = this.needToAutoTestCodes.map(i => this.analyzeAndGenerateTestsCode(i));
 
         // await pAll(promises, { concurrency: this.concurrency })
 
         await Promise.all(promises);
 
         this.needToAutoTestCodes.length = 0;
-    }
+
+        if (this.options.writeFileType === 'file') {
+            Array.from(this.fileMap.keys()).forEach(key => {
+                const item = this.fileMap.get(key);
+
+                const {relativePathName, absoluteWritePath, relativePath} = getWritePathInfo(key);
+
+                const writeFilePath
+                = path.join(rootDir, absoluteWritePath, '__test__', `${relativePath.at(-1)}.spec.ts`);
+
+                const importedCode = `import {${item?.map(i => i.name).join(', ')}} from '${relativePathName}';`;
+
+                const allCode = `
+${importedCode}
+                ${item?.map(i => i.code).join('\n')}`;
+
+                writeFileSync(writeFilePath, allCode);
+            });
+        }
+    };
 
     listModel = async () => {
-        const res = await this.openai!.listModels()
+        const res = await this.openai!.listModels();
 
-        console.log(res.data.data)
+        // console.log(res.data.data);
 
-        return res.data.data
+        return res.data.data;
+    };
+
+    private getAutoTestSourceCode() {
+        const {include = [], exclude = []} = this.options;
+        const defaultExclude = [
+            '!**/__test__/**',
+            '!**/*.spec.{js,ts,mjs}',
+            '!**/*.{css,scss,styl,less,sass,html,jsx,tsx}',
+        ];
+
+        const handledExclude = exclude.map(e => `!${e}`);
+
+        const paths = sync([...include, ...defaultExclude, ...handledExclude], {
+            ignore: ['**/node_modules/**'],
+        });
+
+        for (const path of paths) {
+            dbg('path', path);
+
+            handleTypescriptAst(path, (info: AutoTestFuncInfo) => {
+                this.needToAutoTestCodes.push(info);
+            }, this.options.skipTestComment);
+        }
     }
+
+    private readonly analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
+        const prompt = getPrompt(func.code);
+        // dbg('prompt', prompt);
+
+        dbg('handle analyzeAndGenerateTestsCode before', func.name);
+
+        try {
+            const response = await this.openai!.createCompletion({
+                model: 'text-davinci-003',
+                max_tokens: 999,
+                prompt,
+            });
+
+            const {relativePathName, absoluteWritePath} = getWritePathInfo(func.absolutePath);
+
+            const writeFilePath = path.join(absoluteWritePath, '__test__', `${func.name}.spec.ts`);
+
+            dbg('handle analyzeAndGenerateTestsCode end', func.name);
+
+            if (this.options.writeFileType === 'file') {
+                const wrapperCode = `${response.data.choices[0].text}`;
+
+                const mapItem = this.fileMap.get(func.path);
+                if (mapItem) {
+                    // mapItem.add(wrapperCode)
+                    mapItem.push({
+                        ...func,
+                        code: wrapperCode,
+                    });
+                }
+                else {
+                    this.fileMap.set(func.path, [
+                        {
+                            ...func,
+                            code: wrapperCode,
+                        },
+                    ]);
+                }
+            }
+            else {
+                const importedCode = `import {${func.name}} from '${relativePathName}';`;
+
+                dbg('importedCode', importedCode);
+
+                const wrapperCode = `
+    ${importedCode}\n${response.data.choices[0].text}
+        `;
+                this.writeResultToPath(writeFilePath, wrapperCode);
+            }
+        }
+        catch (error) {
+            console.error('error', (error as Error).message, (error as any).response.statusText);
+
+            throw new Error('call openai error' + (error as Error).message);
+        }
+    };
+
+    private readonly writeResultToPath = (path: string, wrapperCode: string) => {
+        dbg('writeFilePath', path, 'force', this.options.forceWriteFile, !existsSync(path));
+
+        if (this.options.forceWriteFile || !existsSync(path)) {
+            ensureFileSync(path);
+
+            writeFileSync(path, wrapperCode);
+            console.warn(path, 'file write success!');
+        }
+        else {
+            console.warn(path, 'file is existing not force to write, please use force to overwrite it or delete it');
+        }
+    };
 }
