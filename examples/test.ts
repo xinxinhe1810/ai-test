@@ -11,11 +11,11 @@
 const {OpenaiAutoTest} = require('../packages/core');
 
 const Auto = new OpenaiAutoTest({
-    include: ['examples/code/*.ts'],
+    include: ['examples/code/filter.ts'],
     writeFileType: 'file',
     openaiOptions: {
         config: {
-            apiKey: process.env.API_KEY,
+            apiKey: process.env.API_KEY || '123',
         },
     },
 });

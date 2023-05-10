@@ -5,6 +5,7 @@ import {writeFileSync, ensureFileSync, existsSync} from 'fs-extra';
 import {OpenAIApi, Configuration, ConfigurationParameters, CreateCompletionRequest} from 'openai';
 import {AutoTestFuncInfo} from './types';
 import {getPrompt, getWritePathInfo, handleTypescriptAst, rootDir} from './utils';
+import pc from 'picocolors';
 
 const dbg = debug('openai-test');
 
@@ -76,11 +77,7 @@ export class OpenaiAutoTest {
     run = async () => {
         this.getAutoTestSourceCode();
 
-        // console.log(this.needToAutoTestCodes.map(i => i.name));
-
         const promises = this.needToAutoTestCodes.map(i => this.analyzeAndGenerateTestsCode(i));
-
-        // await pAll(promises, { concurrency: this.concurrency })
 
         await Promise.all(promises);
 
@@ -90,18 +87,52 @@ export class OpenaiAutoTest {
             Array.from(this.fileMap.keys()).forEach(key => {
                 const item = this.fileMap.get(key);
 
-                const {relativePathName, absoluteWritePath, relativePath} = getWritePathInfo(key);
+                const {relativePathName, absoluteWritePath, relativePath, fileName} = getWritePathInfo(key);
 
                 const writeFilePath
-                = path.join(rootDir, absoluteWritePath, '__test__', `${relativePath.at(-1)}.spec.ts`);
+                        = path.join(rootDir, absoluteWritePath, '__test__', `${relativePath.at(-1)}.spec.ts`);
 
-                const importedCode = `import {${item?.map(i => i.name).join(', ')}} from '${relativePathName}';`;
+                const defaultImport = item?.filter(i => i.exportType === 'default') || [];
+
+                const namedImport = item
+                    ?.filter(i => i.exportType !== 'default')
+                    ?.map(i => i.name) || [];
+
+                const hasDefaultImport = defaultImport?.length > 0;
+
+                const defaultImportCode = `${hasDefaultImport
+                    ? `${fileName}${namedImport.length ? ', ' : ''}`
+                    : ''}`;
+                const namedImportCode = `${namedImport.length ? `{${namedImport.join(', ')}}` : ''}`;
+
+                const importedCode = `import ${defaultImportCode}${namedImportCode} from '${relativePathName}';`;
+
+                const restDefaultCode = `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}`;
 
                 const allCode = `
 ${importedCode}
-                ${item?.map(i => i.code).join('\n')}`;
 
-                writeFileSync(writeFilePath, allCode);
+${restDefaultCode}
+${item?.map(i => i.code).join('\n')}`;
+
+                if (this.options.forceWriteFile) {
+                    writeFileSync(writeFilePath, allCode);
+                    // eslint-disable-next-line no-console
+                    console.log(`File ${fileName} was written to ${pc.green(writeFilePath)}`);
+                }
+                else {
+                    const existing = existsSync(writeFilePath);
+
+                    if (!existing) {
+                        writeFileSync(writeFilePath, allCode);
+                        // eslint-disable-next-line no-console
+                        console.log(`File ${fileName} was written to ${pc.green(writeFilePath)}`);
+                    }
+                    else {
+                        // eslint-disable-next-line max-len
+                        console.warn(pc.yellow('File already exists. Please choose another file name or choose --force-write-file option.'));
+                    }
+                }
             });
         }
     };
@@ -139,7 +170,6 @@ ${importedCode}
 
     private readonly analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
         const prompt = getPrompt(func.code);
-        // dbg('prompt', prompt);
 
         dbg('handle analyzeAndGenerateTestsCode before', func.name);
 
@@ -161,7 +191,6 @@ ${importedCode}
 
                 const mapItem = this.fileMap.get(func.path);
                 if (mapItem) {
-                    // mapItem.add(wrapperCode)
                     mapItem.push({
                         ...func,
                         code: wrapperCode,
@@ -182,8 +211,8 @@ ${importedCode}
                 dbg('importedCode', importedCode);
 
                 const wrapperCode = `
-    ${importedCode}\n${response.data.choices[0].text}
-        `;
+        ${importedCode}\n${response.data.choices[0].text}
+            `;
                 this.writeResultToPath(writeFilePath, wrapperCode);
             }
         }

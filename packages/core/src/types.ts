@@ -5,4 +5,5 @@ export interface AutoTestFuncInfo {
     code: string;
     path: string;
     absolutePath: string;
+    exportType: 'default' | 'named' | 'namedExpression';
 };

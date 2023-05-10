@@ -51,6 +51,7 @@ export function getMaxStringRule(maxLength: number, resetRuleOption?) {
 /**
  * 获取手机号格式校验规则
  * @param resetRuleOption 复写表单规则
+ * @prompt 手机号仅支持中国
  */
 export function getPhoneRule(resetRuleOption?) {
     return {pattern: phoneRgeExp, message: '请输入正确的手机号格式', ...resetRuleOption};
