@@ -11,15 +11,15 @@ npm install openai-test
 ```
 
 # 配置
-执行初始化
+执行初始化(可选)
 ```shell
 npx openai-test init
 ```
-在项目根目录下创建一个名为 openaitest.config.js 的配置文件(可选)，并添加如下内容：
+或者手动在项目根目录下创建一个名为 openaitest.config.js 的配置文件，并添加如下内容：(可选)
 
 ```javascript
 module.exports = {
-    include: ['**/utils/*.js'], // 默认为 include: ["**/utils/*.{js,ts}"]
+    include: ['**/utils/*.{js,ts}'], // 默认为 include: ["**/utils/*.{js,ts}"]
 };
 ```
 
@@ -29,8 +29,7 @@ module.exports = {
 ```bash
 openai-test
 ```
-
-这将自动生成 Jest 单元测试文件。
+将自动生成 Jest 单元测试文件。
 
 # 使用 core 包
 你还可以通过另一种方式来实现自动生成单元测试，那就是使用 openai-test/core 包。首先，下载 openai-test/core：
