@@ -11,11 +11,11 @@ npm install openai-test
 ```
 
 # 配置
-在项目根目录下创建一个名为 openaitest.config.js 的配置文件，并添加如下内容：
+在项目根目录下创建一个名为 openaitest.config.js 的配置文件(可选)，并添加如下内容：，并添加如下内容：
 
 ```javascript
 module.exports = {
-    include: ['utils/*.js', '!node_modules/**'],
+   include: ['**/utils/*.js'], // 默认为 include: ["**/utils/*.{js,ts}"]
 };
 ```
 上述配置文件将指定要为哪些文件生成单元测试。在这个例子中，我们将为 utils 目录下的所有 .js 文件生成测试。

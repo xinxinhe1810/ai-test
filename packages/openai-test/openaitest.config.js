@@ -1,3 +1,3 @@
 module.exports = {
-    include: ['**/*.js', '!node_modules/**'],
+    include: ['**/utils/*.js'], // 默认为 include: ["**/utils/*.{js,ts}"]
 };

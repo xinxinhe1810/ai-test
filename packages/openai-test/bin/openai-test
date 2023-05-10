@@ -53,7 +53,7 @@ yargs(hideBin(process.argv))
 
         const code = `
 module.exports = {
-    include: ['**/*.js', '!node_modules/**'],
+    include: ['**/utils/*.js']
 };`;
 
         fse.writeFileSync(filePath, code);
