@@ -5,9 +5,10 @@ import {sync} from 'fast-glob';
 import {writeFileSync, ensureFileSync, existsSync} from 'fs-extra';
 import {OpenAIApi, Configuration, ConfigurationParameters, CreateCompletionRequest} from 'openai';
 import {AutoTestFuncInfo} from './types';
-import {getPrompt, getWritePathInfo, handleTypescriptAst, plimit, rootDir} from './utils';
+import {getPrompt, getWritePathInfo, plimit, rootDir} from './utils';
 import pc from 'picocolors';
 import ProgressBar from 'progress';
+import {handleTypescriptAst} from './ast';
 
 const dbg = debug('openai-test');
 
