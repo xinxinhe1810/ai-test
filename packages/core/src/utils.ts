@@ -20,11 +20,45 @@ ts.FunctionLikeDeclaration
 | ts.VariableStatement;
 
 const getName = (node: GetNameDeclaration) => {
+    // 如果是变量、则返回第一个 如： const a = {}; return a
     if (ts.isVariableStatement(node)) {
         return getName(node.declarationList.declarations[0]);
     }
     return node.name ? ('escapedText' in node.name ? node.name.escapedText : 'unknown') : 'anonymous';
 };
+
+// function getImportName(node: ts.ImportDeclaration | ts.ImportSpecifier) {
+//     if ('importClause' in node) {
+//         if (node.importClause?.name) {
+//             return {
+//                 propertyName: '',
+//                 name: node.importClause.name,
+//             };
+//         }
+
+//         // if (node.importClause?.namedBindings) {
+//         //     if ('elements' in node.importClause.namedBindings) {
+//         //         return {
+//         //             propertyName: '',
+//         //             name: node.importClause.namedBindings.elements.map(i => getImportName(i)),
+//         //         };
+//         //     }
+//         // }
+//     }
+//     else if ('name' in node) {
+//         return {
+//             propertyName: node.propertyName?.escapedText,
+//             name: node.name.escapedText,
+//         };
+//     }
+//     else {
+//         console.warn('unhandled import', node.getText());
+//         return {
+//             propertyName: '',
+//             name: '',
+//         };
+//     }
+// }
 
 export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, skipComment = 'openai-test-skip') {
     const realPath = getPath(path);
@@ -35,9 +69,13 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
     const result = new Set<NodeStr>();
 
-    const map = new Map<NodeStr, GetNameDeclaration>();
+    const funcOrClassMap = new Map<NodeStr, GetNameDeclaration>();
 
-    function handleCode(code: string, node: GetNameDeclaration, exportType: AutoTestFuncInfo['exportType'] = 'named') {
+    const importMap = new Map<NodeStr, string>();
+
+    const varCodes = new Map<NodeStr, string>();
+
+    function handleCodeCallback(code: string, node: GetNameDeclaration, exportType: AutoTestFuncInfo['exportType'] = 'named', referenceCodes?: string[]) {
         const functionName  = getName(node);
 
         if (!functionName) {
@@ -69,6 +107,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                 path,
                 absolutePath: realPath,
                 exportType,
+                referenceCodes,
             });
         }
         else {
@@ -76,9 +115,73 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
         }
     }
 
+    function getFunctionCodeReferenceAnotherInGlobal(funcNode: ts.FunctionDeclaration | ts.ArrowFunction | ts.ClassDeclaration) {
+        const functionName = funcNode.name?.getText();
+        const referenceCodes = new Set<string>();
+
+        function visitedNode(node: ts.Node) {
+            const localVariables = new Map();
+
+            // If we encounter a variable declaration, add the variable to the local scope
+            if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+                localVariables.set(node.name.text, node.getText());
+            }
+
+            if (ts.isFunctionExpression(node) || ts.isFunctionLike(node)) {
+                if (node.name && functionName !== node.name.getText()) {
+                    localVariables.set(node.name.getText(), node.getText());
+                }
+            }
+
+            // If we encounter a reference to a variable, check if it's a global variable
+            if (node.kind === ts.SyntaxKind.Identifier) {
+                const variableName = node.getText();
+                const hasVar = varCodes.get(variableName);
+                const hasFunc  = funcOrClassMap.get(variableName);
+                const localNot = !localVariables.get((node as ts.Identifier).text);
+
+                if (localNot && (hasVar || hasFunc)) {
+                    // console.log(`Found a reference to ${variableName} at line`);
+                    // referenceCodes.push(node.getText());
+                    referenceCodes.add(node.getText());
+                }
+            }
+            ts.forEachChild(node, visitedNode);
+        }
+
+        visitedNode(funcNode);
+
+        // console.log('referenceCodes', Array.from(referenceCodes.keys()));
+        return Array.from(referenceCodes.keys());
+    }
+
     // 查找所有函数
     function visitedNode(node: ts.Node) {
-        // console.log('node', node);
+
+        // console.log(node.kind)
+        // if (node.kind === ts.SyntaxKind.Identifier) {
+        //     console.log('Identifier', node.getText(), node.parent.getText());
+        // }
+
+        if (ts.isImportDeclaration(node)) {
+            if (!node.importClause?.isTypeOnly) {
+                if ('text' in node.moduleSpecifier) {
+                    // const name = getImportName(node);
+                    const moduleName = node.moduleSpecifier.text as string;
+                    // 引用的外部函数
+                    if (!(/^./.exec(moduleName))) {
+                        importMap.set(moduleName, node.getText());
+                    }
+                    else {
+                        console.warn('import other file code, skip handle');
+                        // 内部函数、不做处理
+                    }
+                }
+                else {
+                    console.warn('unknown moduleSpecifier', node.getText());
+                }
+            }
+        }
 
         // export default
         if (ts.isExportAssignment(node)) {
@@ -95,10 +198,10 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                             // console.log('isPropertyAssignment', prop.initializer.escapedText);
                             // map[prop.initializer.escapedText] = 1;
                             // console.log('++++', fileContent.substring(prop.getStart(sourceFile), prop.getEnd()));
-                            const recordNode = map.get(functionName);
+                            const recordNode = funcOrClassMap.get(functionName);
                             if (recordNode) {
                                 dbg('[get recordNode] [export default] isPropertyAssignment', functionName);
-                                handleCode(fileContent, recordNode, 'default');
+                                handleCodeCallback(fileContent, recordNode, 'default');
                             }
                         }
                         else {
@@ -109,16 +212,16 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                     else if (ts.isShorthandPropertyAssignment(prop)) {
                         const functionName = getName(prop);
                         dbg('isShorthandPropertyAssignment', functionName);
-                        const recordNode = map.get(functionName);
+                        const recordNode = funcOrClassMap.get(functionName);
                         if (recordNode) {
                             dbg('[get recordNode] [export default] isShorthandPropertyAssignment', functionName);
-                            handleCode(fileContent, recordNode, 'default');
+                            handleCodeCallback(fileContent, recordNode, 'default');
                         }
                     }
 
                     else if (ts.isMethodDeclaration(prop)) {
                         dbg('isMethodDeclaration');
-                        handleCode(fileContent, prop, 'default');
+                        handleCodeCallback(fileContent, prop, 'default');
                     }
                     else {
                         console.warn('no handle', prop.getText());
@@ -128,11 +231,11 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
             else {
                 // export default test
                 if ('escapedText' in node.expression) {
-                    const recordNode = map.get(node.expression.escapedText as string);
+                    const recordNode = funcOrClassMap.get(node.expression.escapedText as string);
                     if (recordNode) {
                         dbg('[get recordNode] [export default] text', node.expression.escapedText);
 
-                        handleCode(fileContent, recordNode);
+                        handleCodeCallback(fileContent, recordNode);
                     }
                 }
                 else {
@@ -159,15 +262,17 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
             // 对 export 的代码做测试
             if (node.modifiers && node.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
-                handleCode(fileContent, node, 'named');
+                const referenceCodes = getFunctionCodeReferenceAnotherInGlobal(node);
+                handleCodeCallback(fileContent, node, 'named', referenceCodes);
             }
             else {
                 // eslint-disable-next-line no-console
-                map.set(functionName, node);
+                funcOrClassMap.set(functionName, node);
                 dbg('not export func, skip handle', functionName);
             }
         }
 
+        // 处理到处的变量声明
         else if (ts.isVariableStatement(node)) {
             let isExported = false;
             if (node.modifiers && node.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
@@ -180,11 +285,15 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
             node.declarationList.declarations.forEach(dec => {
                 if (ts.isVariableDeclaration(dec)) {
+                    varCodes.set(functionName, dec.getText());
+
                     // const a = xxx
-                    if (ts.isFunctionLike(dec.initializer)) {
+                    // const a = function(){}
+                    if (dec.initializer
+                        && (ts.isFunctionLike(dec.initializer) || ts.isFunctionExpression(dec.initializer))) {
                         const functionName = getName(dec);
 
-                        map.set(functionName, dec);
+                        funcOrClassMap.set(functionName, dec);
                         // xxx = {c: () => {}} => c
                         dbg('record declaration [isVariableStatement-isVariableDeclaration]', functionName);
                     }
@@ -195,7 +304,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                                 if (ts.isFunctionLike(prop.initializer)) {
                                     const functionName = getName(prop);
 
-                                    map.set(functionName, prop);
+                                    funcOrClassMap.set(functionName, prop);
                                     // xxx = {d(){}} => d => record
                                     dbg('record property [isVariableStatement]', functionName);
                                 }
@@ -203,16 +312,16 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                                 if (ts.isClassLike(prop.initializer)) {
                                     const className = getName(prop);
 
-                                    console.log('className', className);
+                                    // console.log('className', className);
 
-                                    map.set(className, prop);
+                                    funcOrClassMap.set(className, prop);
                                     // xxx = {d(){}} => d => record
                                     dbg('record property [isVariableStatement]', className);
                                 }
                             }
 
                             if (ts.isShorthandPropertyAssignment(prop)) {
-                                const recordNode = map.get(prop.name.escapedText as string);
+                                const recordNode = funcOrClassMap.get(prop.name.escapedText as string);
                                 if (recordNode) {
                                     // xxx = {e} => e => get code
                                     dbg('[get recordNode] [isVariableStatement]', recordNode.getText());
@@ -223,10 +332,10 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                                 hasMethod = true;
                                 const functionName = getName(prop);
                                 // console.log('isMethodDeclaration', functionName, prop.getText());
-                                const recordNode = map.get(functionName as string);
+                                const recordNode = funcOrClassMap.get(functionName as string);
 
                                 if (!recordNode) {
-                                    map.set(functionName, prop);
+                                    funcOrClassMap.set(functionName, prop);
 
                                     dbg('[set recordNode] [isMethodDeclaration]', functionName);
                                     return;
@@ -237,12 +346,14 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                 }
             });
 
+            // 含有变量的方法，保存起来
             if (hasMethod) {
-                map.set(functionName, node);
+                funcOrClassMap.set(functionName, node);
             }
 
-            if (isExported) {
-                handleCode(fileContent, node);
+            // 变量中含有方法，且被导出
+            if (isExported && hasMethod) {
+                handleCodeCallback(fileContent, node);
             }
         }
 
@@ -251,7 +362,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
     visitedNode(sourceFile);
 
-    console.log('result', result, map.keys());
+    // console.log('result', result, funcOrClassMap.keys(), varCodes);
 }
 
 export function getWritePathInfo(absolutePath: string) {
@@ -290,3 +401,48 @@ For a variable or method within the same class, unit tests are included in one d
 
     return prompt;
 };
+
+export type PromiseFn<T> = () => Promise<T>;
+
+export function plimit<T>(promiseArr: Array<PromiseFn<T>>, limit: number, cb?: (result: T[]) => void): Promise<T[]> {
+    const resultArr: T[] = []; // 存储所有 Promise 的结果
+    const runningPromises: Array<Promise<void | T>> = []; // 存储正在运行的 Promise
+
+    function runPromise() {
+        if (promiseArr.length === 0 && runningPromises.length === 0) {
+            return Promise.resolve();
+        }
+
+        if (runningPromises.length >= limit || promiseArr.length === 0) {
+            return Promise.race(runningPromises).then(() => runPromise());
+        }
+
+        const currentPromise = promiseArr.shift();
+
+        if (!currentPromise) {
+            return Promise.resolve();
+        }
+
+        const runningPromise = currentPromise()
+            .then(result => {
+                resultArr.push(result);
+                cb && (result);
+            })
+            .finally(() => {
+                runningPromises.splice(runningPromises.indexOf(runningPromise), 1);
+            });
+
+        runningPromises.push(runningPromise);
+        return runPromise();
+    }
+
+    return runPromise().then(() => resultArr);
+}
+
+export function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => {
+        setTimeout(() => {
+            resolve();
+        }, ms);
+    });
+}

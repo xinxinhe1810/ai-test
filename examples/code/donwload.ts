@@ -1,8 +1,13 @@
+const a = 1;
+
+const b = 2;
+
 /**
  * 获取下载的挂载元素
  */
 function getDownloadEl(): HTMLElement {
     let linkEl = document.querySelector('downloadLinkEl');
+    console.log(a);
     if (!linkEl) {
         linkEl = document.createElement('a');
         document.body.append(linkEl);
@@ -40,6 +45,18 @@ export function saveFileByData(data, filename?: string) {
  * @param filename
  */
 export function saveFileByLink(downloadLink: string, filename?: string) {
+    const b = 3;
+    const test = () => {
+        console.log(a);
+    };
+
+    function test2() {
+        console.log(b);
+    }
+
+    const test3 = function () {
+
+    };
     const linkEl = getDownloadEl();
     linkEl.setAttribute('href', downloadLink);
     if (filename) {

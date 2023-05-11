@@ -4,7 +4,8 @@
  * @date 2021-10-26
  */
 
-// import dayjs from 'dayjs';
+import dayjs from 'dayjs';
+import {get, set} from 'lodash';
 
 const a = () => { };
 
@@ -92,9 +93,9 @@ export function testFunc2() {
 
 export default {
     format,
-    f: format,
-    a,
-    Cache,
+    // f: format,
+    // a,
+    // Cache,
 };
 
 // export default format;

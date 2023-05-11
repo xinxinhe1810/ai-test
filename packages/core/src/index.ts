@@ -1,11 +1,13 @@
+/* eslint-disable max-len */
 import path from 'path';
 import debug from 'debug';
 import {sync} from 'fast-glob';
 import {writeFileSync, ensureFileSync, existsSync} from 'fs-extra';
 import {OpenAIApi, Configuration, ConfigurationParameters, CreateCompletionRequest} from 'openai';
 import {AutoTestFuncInfo} from './types';
-import {getPrompt, getWritePathInfo, handleTypescriptAst, rootDir} from './utils';
+import {getPrompt, getWritePathInfo, handleTypescriptAst, plimit, rootDir} from './utils';
 import pc from 'picocolors';
+import ProgressBar from 'progress';
 
 const dbg = debug('openai-test');
 
@@ -14,7 +16,7 @@ interface Options {
     exclude?: string[];
     testType?: 'jest';
     skipTestComment?: string;
-    // concurrency?: number;
+    concurrency?: number;
 
     /**
      * 是否覆盖已存在的文件夹
@@ -52,15 +54,14 @@ export class OpenaiAutoTest {
 
     private readonly openai: OpenAIApi | null = null;
 
-    // private concurrency: number = 4;
+    private readonly concurrency: number = 4;
 
     private readonly needToAutoTestCodes: AutoTestFuncInfo[] = [];
-
 
     constructor(options: Options) {
         this.options = options;
 
-        // this.concurrency = options.concurrency || 2
+        this.concurrency = options.concurrency || 4;
 
         const configuration = new Configuration({
             apiKey: process.env.API_KEY,
@@ -77,70 +78,40 @@ export class OpenaiAutoTest {
     run = async () => {
         this.getAutoTestSourceCode();
 
-        const promises = this.needToAutoTestCodes.map(i => this.analyzeAndGenerateTestsCode(i));
+        const bar = new ProgressBar('fetching :bar :current\/:total :percent :name', {
+            width: 20,
+            total: this.needToAutoTestCodes.length,
+        });
 
-        await Promise.all(promises);
+        const handleFuncs = Array.from(this.needToAutoTestCodes.map(i => i.name));
 
-        this.needToAutoTestCodes.length = 0;
+        // eslint-disable-next-line no-console
+        console.log(pc.gray('openai test should be handle func list'), handleFuncs);
 
-        if (this.options.writeFileType === 'file') {
-            Array.from(this.fileMap.keys()).forEach(key => {
-                const item = this.fileMap.get(key);
+        const promises = this.needToAutoTestCodes.map(i => () => this.analyzeAndGenerateTestsCode(i));
 
-                const {relativePathName, absoluteWritePath, relativePath, fileName} = getWritePathInfo(key);
+        bar.tick({
+            name: `${handleFuncs[0]} start`,
+        });
 
-                const writeFilePath
-                        = path.join(rootDir, absoluteWritePath, '__test__', `${relativePath.at(-1)}.spec.ts`);
+        await plimit(promises, this.concurrency, res => {
+            bar.tick({
+                name: `${handleFuncs[res.length]} done`,
+            });
+        });
 
-                const defaultImport = item?.filter(i => i.exportType === 'default') || [];
-
-                const namedImport = item
-                    ?.filter(i => i.exportType !== 'default')
-                    ?.map(i => i.name) || [];
-
-                const hasDefaultImport = defaultImport?.length > 0;
-
-                const defaultImportCode = `${hasDefaultImport
-                    ? `${fileName}${namedImport.length ? ', ' : ''}`
-                    : ''}`;
-                const namedImportCode = `${namedImport.length ? `{${namedImport.join(', ')}}` : ''}`;
-
-                const importedCode = `import ${defaultImportCode}${namedImportCode} from '${relativePathName}';`;
-
-                const restDefaultCode = `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}`;
-
-                const allCode = `
-${importedCode}
-
-${restDefaultCode}
-${item?.map(i => i.code).join('\n')}`;
-
-                if (this.options.forceWriteFile) {
-                    writeFileSync(writeFilePath, allCode);
-                    // eslint-disable-next-line no-console
-                    console.log(`File ${fileName} was written to ${pc.green(writeFilePath)}`);
-                }
-                else {
-                    const existing = existsSync(writeFilePath);
-
-                    if (!existing) {
-                        writeFileSync(writeFilePath, allCode);
-                        // eslint-disable-next-line no-console
-                        console.log(`File ${fileName} was written to ${pc.green(writeFilePath)}`);
-                    }
-                    else {
-                        // eslint-disable-next-line max-len
-                        console.warn(pc.yellow('File already exists. Please choose another file name or choose --force-write-file option.'));
-                    }
-                }
+        if (!bar.complete) {
+            bar.tick(handleFuncs.length - bar.curr, {
+                name: 'all done',
             });
         }
+
+        this.needToAutoTestCodes.length = 0;
+        this.writeCodeWithFile();
     };
 
     listModel = async () => {
         const res = await this.openai!.listModels();
-
-        // console.log(res.data.data);
 
         return res.data.data;
     };
@@ -180,40 +151,34 @@ ${item?.map(i => i.code).join('\n')}`;
                 prompt,
             });
 
-            const {relativePathName, absoluteWritePath} = getWritePathInfo(func.absolutePath);
-
-            const writeFilePath = path.join(absoluteWritePath, '__test__', `${func.name}.spec.ts`);
+            const {relativePathName} = getWritePathInfo(func.absolutePath);
 
             dbg('handle analyzeAndGenerateTestsCode end', func.name);
 
-            if (this.options.writeFileType === 'file') {
-                const wrapperCode = `${response.data.choices[0].text}`;
+            const singleFunctionImportedCode = `import {${func.name}} from '${relativePathName}';`;
 
-                const mapItem = this.fileMap.get(func.path);
-                if (mapItem) {
-                    mapItem.push({
-                        ...func,
-                        code: wrapperCode,
-                    });
-                }
-                else {
-                    this.fileMap.set(func.path, [
-                        {
-                            ...func,
-                            code: wrapperCode,
-                        },
-                    ]);
-                }
+            dbg('importedCode', singleFunctionImportedCode);
+
+            const singleFunctionCode = `
+    ${singleFunctionImportedCode}\n${response.data.choices[0].text}
+        `;
+
+            const wrapperCode = this.options.writeFileType === 'file' ? `${response.data.choices[0].text}` : singleFunctionCode;
+
+            const mapItem = this.fileMap.get(func.path);
+            if (mapItem) {
+                mapItem.push({
+                    ...func,
+                    code: wrapperCode,
+                });
             }
             else {
-                const importedCode = `import {${func.name}} from '${relativePathName}';`;
-
-                dbg('importedCode', importedCode);
-
-                const wrapperCode = `
-        ${importedCode}\n${response.data.choices[0].text}
-            `;
-                this.writeResultToPath(writeFilePath, wrapperCode);
+                this.fileMap.set(func.path, [
+                    {
+                        ...func,
+                        code: wrapperCode,
+                    },
+                ]);
             }
         }
         catch (error) {
@@ -223,6 +188,54 @@ ${item?.map(i => i.code).join('\n')}`;
         }
     };
 
+    private readonly writeCodeWithFile = () => {
+        // eslint-disable-next-line no-console
+        console.log();
+        // eslint-disable-next-line no-console
+        console.log(pc.gray('start to write code with file'));
+        Array.from(this.fileMap.keys()).forEach(key => {
+            const item = this.fileMap.get(key);
+
+            const {relativePathName, absoluteWritePath, relativePath, fileName} = getWritePathInfo(key);
+
+            if (this.options.writeFileType === 'file') {
+                const writeFilePath
+                        = path.join(rootDir, absoluteWritePath, '__test__', `${relativePath.at(-1)}.spec.ts`);
+
+                const defaultImport = item?.filter(i => i.exportType === 'default') || [];
+
+                const namedImport = item
+                    ?.filter(i => i.exportType !== 'default')
+                    ?.map(i => i.name) || [];
+
+                const hasDefaultImport = defaultImport?.length > 0;
+
+                const defaultImportCode = `${hasDefaultImport
+                    ? `${fileName}${namedImport.length ? ', ' : ''}`
+                    : ''}`;
+                const namedImportCode = `${namedImport.length ? `{${namedImport.join(', ')}}` : ''}`;
+
+                const importedCode = `import ${defaultImportCode}${namedImportCode} from '${relativePathName}';`;
+
+                const restDefaultCode = `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}`;
+
+                const allCode = `
+    ${importedCode}
+    
+    ${restDefaultCode}
+    ${item?.map(i => i.code).join('\n')}`;
+
+                this.writeResultToPath(writeFilePath, allCode);
+            }
+            else {
+                item?.forEach(file => {
+                    const writeFilePath = path.join(absoluteWritePath, '__test__', `${file.name}.spec.ts`);
+                    this.writeResultToPath(writeFilePath, file.code);
+                });
+            }
+        });
+    };
+
     private readonly writeResultToPath = (path: string, wrapperCode: string) => {
         dbg('writeFilePath', path, 'force', this.options.forceWriteFile, !existsSync(path));
 
@@ -230,10 +243,12 @@ ${item?.map(i => i.code).join('\n')}`;
             ensureFileSync(path);
 
             writeFileSync(path, wrapperCode);
-            console.warn(path, 'file write success!');
+
+            // eslint-disable-next-line no-console
+            console.log(pc.gray(`File was written to ${pc.green(path)}`));
         }
         else {
-            console.warn(path, 'file is existing not force to write, please use force to overwrite it or delete it');
+            console.warn(pc.red(`\nWrite File Failed! File is existing, path: ${path}`), pc.gray('please use options forceWriteFile to overwrite it or delete file'));
         }
     };
 }

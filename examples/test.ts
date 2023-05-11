@@ -11,7 +11,7 @@
 const {OpenaiAutoTest} = require('../packages/core');
 
 const Auto = new OpenaiAutoTest({
-    include: ['examples/code/filter.ts'],
+    include: ['examples/code/donwload.ts'],
     writeFileType: 'file',
     openaiOptions: {
         config: {
@@ -20,4 +20,5 @@ const Auto = new OpenaiAutoTest({
     },
 });
 
-Auto.run();
+// Auto.run();
+Auto.getAutoTestSourceCode();

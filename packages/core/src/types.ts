@@ -6,4 +6,5 @@ export interface AutoTestFuncInfo {
     path: string;
     absolutePath: string;
     exportType: 'default' | 'named' | 'namedExpression';
+    referenceCodes?: string[];
 };
