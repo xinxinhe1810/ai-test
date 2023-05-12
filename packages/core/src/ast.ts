@@ -1,6 +1,6 @@
 /* eslint-disable max-len */
 import {readFileSync} from 'fs-extra';
-import ts from 'typescript';
+import ts, {NodeFlags} from 'typescript';
 import path from 'path';
 import {AutoTestFuncInfo} from './types';
 import {debug} from 'debug';
@@ -13,6 +13,12 @@ const dbg = debug('openai-test');
 
 const getPath = p => (path.isAbsolute(p) ? p : path.join(rootDir, p));
 
+const declarationMap = {
+    [NodeFlags.Const]: 'const',
+    [NodeFlags.None]: 'var',
+    [NodeFlags.Let]: 'let',
+} as const;
+
 type GetNameDeclaration =
 ts.FunctionLikeDeclaration
 | ts.VariableLikeDeclaration
@@ -24,7 +30,9 @@ const getName = (node: GetNameDeclaration) => {
     if (ts.isVariableStatement(node)) {
         return getName(node.declarationList.declarations[0]);
     }
-    return node.name ? ('escapedText' in node.name ? node.name.escapedText : 'unknown') : 'anonymous';
+
+    // return node.name ? ('escapedText' in node.name ? node.name.escapedText : 'unknown') : 'anonymous';
+    return node.name?.getText() || 'anonymous';
 };
 
 export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, skipComment = 'openai-test-skip') {
@@ -82,7 +90,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
         }
     }
 
-    function getFunctionCodeReferenceAnotherInGlobal(funcNode: ts.FunctionDeclaration | ts.ArrowFunction | ts.ClassDeclaration) {
+    function getFunctionReferenceCodesAnotherInGlobal(funcNode: ts.FunctionDeclaration | ts.ArrowFunction | ts.ClassDeclaration) {
         const functionName = funcNode.name?.getText();
         const referenceCodes = new Set<string>();
 
@@ -118,8 +126,22 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
         visitedNode(funcNode);
 
-        // console.log('referenceCodes', Array.from(referenceCodes.keys()));
-        return Array.from(referenceCodes.keys());
+        const codeNames = Array.from(referenceCodes.keys());
+
+        const codes = codeNames.map(i => {
+            if (varCodes.get(i)) {
+                return varCodes.get(i) || '';
+            }
+
+            if (funcOrClassMap.get(i)) {
+                return funcOrClassMap.get(i)?.getText() || '';
+            }
+
+            return '';
+        });
+
+        // console.log('referenceCodes', Array.from(referenceCodes.keys()), codes);
+        return codes;
     }
 
     // 查找所有函数
@@ -156,9 +178,6 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                     if (ts.isPropertyAssignment(prop)) {
                         if ('escapedText' in prop.initializer) {
                             const functionName = getName(prop);
-                            // console.log('isPropertyAssignment', prop.initializer.escapedText);
-                            // map[prop.initializer.escapedText] = 1;
-                            // console.log('++++', fileContent.substring(prop.getStart(sourceFile), prop.getEnd()));
                             const recordNode = funcOrClassMap.get(functionName);
                             if (recordNode) {
                                 dbg('[get recordNode] [export default] isPropertyAssignment', functionName);
@@ -223,7 +242,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
             // 对 export 的代码做测试
             if (node.modifiers && node.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
-                const referenceCodes = getFunctionCodeReferenceAnotherInGlobal(node);
+                const referenceCodes = getFunctionReferenceCodesAnotherInGlobal(node);
                 handleCodeCallback(fileContent, node, 'named', referenceCodes);
             }
             else {
@@ -244,9 +263,12 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
 
             const functionName: NodeStr = getName(node);
 
+            const declaration = node.declarationList.flags && declarationMap[node.declarationList.flags];
+
             node.declarationList.declarations.forEach(dec => {
                 if (ts.isVariableDeclaration(dec)) {
-                    varCodes.set(functionName, dec.getText());
+                    // console.log('dec', dec.getText(), fileContent.substring(dec.getStart(), dec.getEnd()));
+                    varCodes.set(functionName, `${declaration} ${dec.getText()}`);
 
                     // const a = xxx
                     // const a = function(){}

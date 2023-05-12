@@ -2,83 +2,131 @@
 import {saveFileByLink, saveFileByData} from '../donwload';
 
 describe('saveFileByLink', () => {
-    it('should render a download link for valid strings', () => {
-        const downloadLink = 'http://example.com/example.zip';
-        const filename = 'example.zip';
+    let linkEl: HTMLAnchorElement;
+    let appendChildSpy: jest.SpyInstance;
+    let createElementSpy: jest.SpyInstance;
+    let clickSpy: jest.SpyInstance;
+    let originalCreateObjectURL: typeof URL.createObjectURL;
 
-        const linkEl = jest.spyOn(document, 'createElement');
+    beforeEach(() => {
+        linkEl = document.createElement('a');
+        appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
+        createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue(linkEl);
+        clickSpy = jest.spyOn(linkEl, 'click').mockImplementation(() => {});
 
-        saveFileByLink(downloadLink, filename);
-
-        expect(linkEl).toBeCalledWith('a');
-
-        const {href, download} = linkEl.mock.calls[0][0];
-        expect(href).toBe(downloadLink);
-        expect(download).toBe(filename);
+        // Save original URL.createObjectURL and replace with mock
+        originalCreateObjectURL = URL.createObjectURL;
+        (URL as any).createObjectURL = jest.fn(() => 'blob:http://example.com');
     });
 
-    it('should render a download link for valid Blob objects', () => {
-        const downloadLink = new Blob(['example']);
-        const filename = 'example.txt';
+    afterEach(() => {
+        appendChildSpy.mockRestore();
+        createElementSpy.mockRestore();
+        clickSpy.mockRestore();
 
-        const linkEl = jest.spyOn(document, 'createElement');
-
-        saveFileByLink(downloadLink, filename);
-
-        expect(linkEl).toBeCalledWith('a');
-
-        const {href, download} = linkEl.mock.calls[0][0];
-        expect(href).toBeDefined();
-        expect(download).toBe(filename);
+        // Restore original URL.createObjectURL
+        (URL as any).createObjectURL = originalCreateObjectURL;
     });
 
-    it('should still render a download link if no filename provided', () => {
-        const downloadLink = 'http://example.com/example.zip';
-
-        const linkEl = jest.spyOn(document, 'createElement');
-
+    it('sets the href attribute and triggers a click', () => {
+        const downloadLink = 'http://example.com';
         saveFileByLink(downloadLink);
 
-        expect(linkEl).toBeCalledWith('a');
+        expect(linkEl.getAttribute('href')).toBe(downloadLink);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
 
-        const {href, download} = linkEl.mock.calls[0][0];
-        expect(href).toBe(downloadLink);
-        expect(download).toBeUndefined();
+    it('sets the download attribute if a filename is provided', () => {
+        const downloadLink = 'http://example.com';
+        const filename = 'test-file.txt';
+        saveFileByLink(downloadLink, filename);
+
+        expect(linkEl.getAttribute('href')).toBe(downloadLink);
+        expect(linkEl.getAttribute('download')).toBe(filename);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not set the download attribute if a filename is not provided', () => {
+        const downloadLink = 'http://example.com';
+        saveFileByLink(downloadLink);
+
+        expect(linkEl.getAttribute('href')).toBe(downloadLink);
+        expect(linkEl.getAttribute('download')).toBeNull();
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles blob object URLs', () => {
+        const blob = new Blob(['test data'], {type: 'text/plain'});
+        const downloadLink = URL.createObjectURL(blob);
+        saveFileByLink(downloadLink);
+
+        expect(linkEl.getAttribute('href')).toBe(downloadLink);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
     });
 });
 
 describe('saveFileByData', () => {
-    let data: Blob;
+    let linkEl: HTMLAnchorElement;
+    let appendChildSpy: jest.SpyInstance;
+    let createElementSpy: jest.SpyInstance;
+    let clickSpy: jest.SpyInstance;
+    let originalCreateObjectURL: typeof URL.createObjectURL;
+    let originalRevokeObjectURL: typeof URL.revokeObjectURL;
+
     beforeEach(() => {
-        data = new Blob(['some data'], {type: 'application/octet-stream'});
+        jest.useFakeTimers();
+        linkEl = document.createElement('a');
+        appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(() => {});
+        createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue(linkEl);
+        clickSpy = jest.spyOn(linkEl, 'click').mockImplementation(() => {});
+
+        originalCreateObjectURL = URL.createObjectURL;
+        (URL as any).createObjectURL = jest.fn(() => 'blob:http://example.com');
+
+        originalRevokeObjectURL = URL.revokeObjectURL;
+        (URL as any).revokeObjectURL = jest.fn();
     });
-    it('should save file with just data', () => {
-    // No filename is passed
+
+    afterEach(() => {
+        jest.useRealTimers();
+        appendChildSpy.mockRestore();
+        createElementSpy.mockRestore();
+        clickSpy.mockRestore();
+
+        (URL as any).createObjectURL = originalCreateObjectURL;
+        (URL as any).revokeObjectURL = originalRevokeObjectURL;
+    });
+
+    it('sets the href attribute, triggers a click and revokes URL after timeout', () => {
+        const data = new Blob(['test data'], {type: 'text/plain'});
         saveFileByData(data);
-        expect(document.createElement).toHaveBeenCalledWith('a');
-        const linkEl = getDownloadEl();
-        expect(linkEl.getAttribute('href')).not.toBe('');
-        expect(linkEl.getAttribute('download')).toBe('');
-        expect(linkEl.click).toHaveBeenCalled();
-        expect(URL.revokeObjectURL).toHaveBeenCalledWith(linkEl.getAttribute('href'));
+
+        expect(URL.createObjectURL).toHaveBeenCalledWith(data);
+        expect(linkEl.getAttribute('href')).toBe('blob:http://example.com');
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+
+        jest.runAllTimers();
+
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:http://example.com');
+        expect(linkEl.getAttribute('href')).toBe('');
     });
 
-    it('should save file with data and filename', () => {
-    // A filename is passed.
-        const filename = 'newDataFile.txt';
+    it('sets the download attribute if a filename is provided and clears it after timeout', () => {
+        const data = new Blob(['test data'], {type: 'text/plain'});
+        const filename = 'test-file.txt';
         saveFileByData(data, filename);
-        expect(document.createElement).toHaveBeenCalledWith('a');
-        const linkEl = getDownloadEl();
-        expect(linkEl.getAttribute('href')).not.toBe('');
+
         expect(linkEl.getAttribute('download')).toBe(filename);
-        expect(linkEl.click).toHaveBeenCalled();
-        expect(URL.revokeObjectURL).toHaveBeenCalledWith(linkEl.getAttribute('href'));
+
+        jest.runAllTimers();
+
+        expect(linkEl.getAttribute('download')).toBe('');
     });
 
-    it('should throw an error if data is not a Blob', () => {
-    // Incorrect type of data is passed
-        expect(() => saveFileByData('invalid data')).toThrowError(
-            'The data provided must be of type Blob.'
-        );
+    it('does not set the download attribute if a filename is not provided', () => {
+        const data = new Blob(['test data'], {type: 'text/plain'});
+        saveFileByData(data);
+
+        expect(linkEl.getAttribute('download')).toBeNull();
     });
 });

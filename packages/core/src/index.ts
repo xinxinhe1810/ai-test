@@ -86,6 +86,12 @@ export class OpenaiAutoTest {
 
         const handleFuncs = Array.from(this.needToAutoTestCodes.map(i => i.name));
 
+        if (!handleFuncs.length) {
+            // eslint-disable-next-line no-console
+            console.log(pc.black('no function found to test'));
+            return;
+        }
+
         // eslint-disable-next-line no-console
         console.log(pc.gray('openai test should be handle func list'), handleFuncs);
 
@@ -141,7 +147,9 @@ export class OpenaiAutoTest {
     }
 
     private readonly analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
-        const prompt = getPrompt(func.code);
+        const prompt = getPrompt(func.code, func.referenceCodes);
+
+        console.log('prompt', prompt);
 
         dbg('handle analyzeAndGenerateTestsCode before', func.name);
 
@@ -161,8 +169,8 @@ export class OpenaiAutoTest {
             dbg('importedCode', singleFunctionImportedCode);
 
             const singleFunctionCode = `
-    ${singleFunctionImportedCode}\n${response.data.choices[0].text}
-        `;
+        ${singleFunctionImportedCode}\n${response.data.choices[0].text}
+                `;
 
             const wrapperCode = this.options.writeFileType === 'file' ? `${response.data.choices[0].text}` : singleFunctionCode;
 
@@ -191,9 +199,16 @@ export class OpenaiAutoTest {
 
     private readonly writeCodeWithFile = () => {
         // eslint-disable-next-line no-console
-        console.log();
+        dbg();
         // eslint-disable-next-line no-console
-        console.log(pc.gray('start to write code with file'));
+        dbg(pc.gray('start to write code with file'));
+
+        if (!this.fileMap.size) {
+            // eslint-disable-next-line no-console
+            console.log(pc.black('no test function found to write file'));
+            return;
+        }
+
         Array.from(this.fileMap.keys()).forEach(key => {
             const item = this.fileMap.get(key);
 
@@ -218,13 +233,13 @@ export class OpenaiAutoTest {
 
                 const importedCode = `import ${defaultImportCode}${namedImportCode} from '${relativePathName}';`;
 
-                const restDefaultCode = `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}`;
+                const restDefaultCode = defaultImport.length ? `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}` : '';
 
                 const allCode = `
-    ${importedCode}
-    
-    ${restDefaultCode}
-    ${item?.map(i => i.code).join('\n')}`;
+${importedCode}
+
+${restDefaultCode}
+${item?.map(i => i.code).join('\n')}`;
 
                 this.writeResultToPath(writeFilePath, allCode);
             }

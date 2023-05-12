@@ -20,5 +20,5 @@ const Auto = new OpenaiAutoTest({
     },
 });
 
-// Auto.run();
-Auto.getAutoTestSourceCode();
+Auto.run();
+// Auto.getAutoTestSourceCode();
