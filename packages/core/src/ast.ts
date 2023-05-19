@@ -58,7 +58,6 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
             return;
         }
 
-
         if (functionName === 'anonymous' || functionName === 'unknown') {
             console.warn(`${node.getText()} functionName is validated`);
             return;
@@ -200,7 +199,8 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                     }
 
                     else if (ts.isMethodDeclaration(prop)) {
-                        dbg('isMethodDeclaration');
+                        const functionName = getName(prop);
+                        dbg('isMethodDeclaration', functionName);
                         handleCodeCallback(fileContent, prop, 'default');
                     }
                     else {
@@ -215,7 +215,7 @@ export function handleTypescriptAst(path, cb: (v: AutoTestFuncInfo) => void, ski
                     if (recordNode) {
                         dbg('[get recordNode] [export default] text', node.expression.escapedText);
 
-                        handleCodeCallback(fileContent, recordNode);
+                        handleCodeCallback(fileContent, recordNode, 'default');
                     }
                 }
                 else {

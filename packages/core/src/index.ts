@@ -43,7 +43,7 @@ export class OpenaiAutoTest {
         exclude: [],
         testType: 'jest',
         skipTestComment: 'openai-test-skip',
-        writeFileType: 'function',
+        writeFileType: 'file',
         forceWriteFile: false,
         openaiOptions: {
             'createCompletionRequest': undefined,
@@ -168,8 +168,7 @@ export class OpenaiAutoTest {
 
             dbg('importedCode', singleFunctionImportedCode);
 
-            const singleFunctionCode = `
-        ${singleFunctionImportedCode}\n${response.data.choices[0].text}
+            const singleFunctionCode = `${singleFunctionImportedCode}\n${response.data.choices[0].text}
                 `;
 
             const wrapperCode = this.options.writeFileType === 'file' ? `${response.data.choices[0].text}` : singleFunctionCode;
@@ -235,8 +234,7 @@ export class OpenaiAutoTest {
 
                 const restDefaultCode = defaultImport.length ? `const {${defaultImport.map(i => i.name).join(', ')}} = ${fileName}` : '';
 
-                const allCode = `
-${importedCode}
+                const allCode = `${importedCode}
 
 ${restDefaultCode}
 ${item?.map(i => i.code).join('\n')}`;
