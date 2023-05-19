@@ -149,7 +149,7 @@ export class OpenaiAutoTest {
     private readonly analyzeAndGenerateTestsCode = async (func: AutoTestFuncInfo) => {
         const prompt = getPrompt(func.code, func.referenceCodes);
 
-        console.log('prompt', prompt);
+        // console.log('prompt', prompt);
 
         dbg('handle analyzeAndGenerateTestsCode before', func.name);
 
