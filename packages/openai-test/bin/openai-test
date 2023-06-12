@@ -8,7 +8,7 @@ const fse = require('fs-extra');
 
 const pc = require('picocolors');
 
-const {OpenaiAutoTest} = require('..');
+const {OpenaiAutoTest} = require('@openai-test/core');
 
 const dotenv = require('dotenv');
 
